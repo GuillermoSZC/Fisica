@@ -39,8 +39,8 @@ class btCollisionShape;
 #include "../CommonInterfaces/CommonGUIHelperInterface.h"
 #include "../CommonInterfaces/CommonRenderInterface.h"
 #include "../CommonInterfaces/CommonWindowInterface.h"
-#include "BulletCollision/CollisionShapes/btBoxShape.h"
-
+#include "../CommonInterfaces/CommonGraphicsAppInterface.h"
+#include <vector>
 
 ///VehicleDemo shows how to setup and use the built-in raycast vehicle
 class Hinge2Vehicle : public CommonExampleInterface
@@ -78,6 +78,7 @@ public:
 
 	class btTriangleIndexVertexArray* m_indexVertexArrays;
 
+	std::vector<btRaycastVehicle*> vehicleComps;
 	btVector3* m_vertices;
 
 	btRaycastVehicle::btVehicleTuning m_tuning;
@@ -221,10 +222,6 @@ void Hinge2Vehicle::createTower(btScalar posX, btScalar posZ)
 	// la torre tiene que aparecer sin derrumbarse y a ras de suelo
 	//los objetos de la  torre tienen que estar desactivados  y despertarse en dinamicas solo cuando le golpea algun otro objeto
 
-	btCollisionShape* colShape = new btBoxShape(btVector3(0.5f, 0.1f, 0.5f));
-
-	m_collisionShapes.push_back(colShape);
-
 	btTransform startTransform;
 	startTransform.setIdentity();
 
@@ -237,12 +234,11 @@ void Hinge2Vehicle::createTower(btScalar posX, btScalar posZ)
 	btScalar size = 0.5f;
 
 	btScalar mass(1.f);
-
-	bool isDynamic = (mass != 0.f);
-
+	btVector3 sizeBox(size, size, size);
+	auto* boxShape = new btBoxShape(sizeBox);
+	m_collisionShapes.push_back(boxShape);
 	btVector3 localInertia(0, 0, 0);
-	if (isDynamic)
-		colShape->calculateLocalInertia(mass, localInertia);
+	boxShape->calculateLocalInertia(mass, localInertia);
 
 	int i, j, k;
 	//esta es loop de creacion
@@ -254,11 +250,12 @@ void Hinge2Vehicle::createTower(btScalar posX, btScalar posZ)
 			{
 				//TODO:
 				startTransform.setOrigin(btVector3(
-					btScalar(start_x * i),
-					btScalar(start_y * k),
-					btScalar(start_z * j)));
+					btScalar(i + start_x),
+					btScalar(k + start_y),
+					btScalar(j + start_z)));
 
-					localCreateRigidBody(mass, startTransform, colShape);
+				btRigidBody* auxRB = localCreateRigidBody(mass, startTransform, boxShape);
+				auxRB->setActivationState(ISLAND_SLEEPING);
 			}
 		}
 	}
@@ -281,6 +278,99 @@ btRaycastVehicle* Hinge2Vehicle::createVagon(btRaycastVehicle* parent_vehicle)
 	btScalar parentSizeX = (aabbMax.getX() - aabbMin.getX());  //ancho del coche
 	btScalar parentSizeY = (aabbMax.getY() - aabbMin.getY());  //altura del coche
 	btScalar parentSizeZ = (aabbMax.getZ() - aabbMin.getZ());  //longitud del coche
+
+	btCollisionShape* boxShape = new btBoxShape(btVector3(1.f, 0.5f, 2.f));
+	m_collisionShapes.push_back(boxShape);
+
+	btTransform transVagon;
+	btVector3 posVagon;
+
+	if (vehicleComps.size() == 1)
+	{
+		posVagon = btVector3(parentPos.getX(), parentPos.getY(), parentPos.getZ() - parentSizeZ);
+	}
+	else
+	{
+		posVagon = btVector3(parentPos.getX(), parentPos.getY(), parentPos.getZ() - parentSizeZ - 1.f);
+	}
+
+	transVagon.setIdentity();
+	transVagon.setOrigin(posVagon);
+	btRigidBody* rbVagon = localCreateRigidBody(800.f, transVagon, boxShape);
+	rbVagon->setActivationState(DISABLE_DEACTIVATION);
+
+	auto vagon = new btRaycastVehicle(m_tuning, rbVagon, m_vehicleRayCaster);
+
+	m_dynamicsWorld->addVehicle(vagon);
+
+	int wheelIndex = m_wheelShape->getUserIndex();
+
+	const float pos[4] = {0, 5, 0, 0};
+	const float scaling[4] = {1, 1, 1, 1};
+	const float color[4] = {0, 1, 0, 1};
+	const float quat[4] = {0, 0, 0, 1};
+
+	int vSize = vehicleComps.size();
+
+	for (int i = vSize * 4; i < (vSize * 4) + 4; i++)
+	{
+		m_wheelInstances[i] = m_guiHelper->registerGraphicsInstance(wheelIndex, pos, quat, color, scaling);
+	}
+
+	float heightConnect = 0.2f;
+
+	bool validateWheelPos = false;
+
+	const int rIndex = 0;
+	const int uIndex = 1;
+	const int fIndex = 2;
+
+	vagon->setCoordinateSystem(rIndex, uIndex, fIndex);
+
+	btVector3 jointWheel(CUBE_HALF_EXTENTS - (0.3 * wheel_Width), heightConnect, 2 * CUBE_HALF_EXTENTS - wheel_Radius);
+	vagon->addWheel(jointWheel, wheelDirection_CS0, wheelAxle_CS, suspension_RestLength, wheel_Radius, m_tuning, validateWheelPos);
+
+	jointWheel = btVector3(-CUBE_HALF_EXTENTS + (0.3 * wheel_Width), heightConnect, 2 * CUBE_HALF_EXTENTS - wheel_Radius);
+	vagon->addWheel(jointWheel, wheelDirection_CS0, wheelAxle_CS, suspension_RestLength, wheel_Radius, m_tuning, validateWheelPos);
+
+	jointWheel = btVector3(-CUBE_HALF_EXTENTS + (0.3 * wheel_Width), heightConnect, -2 * CUBE_HALF_EXTENTS + wheel_Radius);
+	vagon->addWheel(jointWheel, wheelDirection_CS0, wheelAxle_CS, suspension_RestLength, wheel_Radius, m_tuning, validateWheelPos);
+
+	jointWheel = btVector3(CUBE_HALF_EXTENTS - (0.3 * wheel_Width), heightConnect, -2 * CUBE_HALF_EXTENTS + wheel_Radius);
+	vagon->addWheel(jointWheel, wheelDirection_CS0, wheelAxle_CS, suspension_RestLength, wheel_Radius, m_tuning, validateWheelPos);
+
+	for (int i = 0; i < vagon->getNumWheels(); i++)
+	{
+		btWheelInfo& auxWheel = vagon->getWheelInfo(i);
+		auxWheel.m_suspensionStiffness = suspension_Stiffness;
+		auxWheel.m_wheelsDampingRelaxation = suspension_Damping;
+		auxWheel.m_wheelsDampingCompression = suspension_Compression;
+		auxWheel.m_frictionSlip = wheel_Friction;
+		auxWheel.m_rollInfluence = roll_Influence;
+	}
+
+	btTransform transform1, transform2;
+	transform1.setIdentity();
+	transform2.setIdentity();
+	transform1.getBasis().setEulerZYX(M_PI_2, 0, 0);
+	transform2.getBasis().setEulerZYX(M_PI_2, 0, 0);
+
+	if (vehicleComps.size() == 1)
+	{
+		transform1.setOrigin(btVector3(0.f, 1.f, -1.45f));
+	}
+	else
+	{
+		transform1.setOrigin(btVector3(0.f, 0.f, -1.45f));
+	}
+
+	transform2.setOrigin(btVector3(0.f, 0.f, 2.9f));
+
+	auto hinge2Constraint = new btHingeConstraint(*parentBody, *rbVagon, transform1, transform2);
+	m_dynamicsWorld->addConstraint(hinge2Constraint, false);
+	vehicleComps.push_back(vagon);
+
+	return vagon;
 }
 
 Hinge2Vehicle::Hinge2Vehicle(struct GUIHelperInterface* helper)
@@ -426,6 +516,22 @@ void Hinge2Vehicle::initPhysics()
 	//create ground object
 	localCreateRigidBody(0, tr, groundShape);
 
+	// ************************************************ CREATE TOWER ******************************************************
+
+	/// <summary>
+	///  create 10 towers with x random position
+	/// </summary>
+
+	for (int i = 1; i <= 10; ++i)
+	{
+		btScalar xPosition = SignedUnitRand();
+
+		float zPosition = 7.f * i;
+		xPosition = (xPosition * 15.f) - 15.f;
+
+		createTower(xPosition, zPosition);
+	}
+
 	btCollisionShape* chassisShape = new btBoxShape(btVector3(1.f, 0.5f, 2.f));
 	m_collisionShapes.push_back(chassisShape);
 
@@ -472,6 +578,7 @@ void Hinge2Vehicle::initPhysics()
 	{
 		m_vehicleRayCaster = new btDefaultVehicleRaycaster(m_dynamicsWorld);
 		m_vehicle = new btRaycastVehicle(m_tuning, m_carChassis, m_vehicleRayCaster);
+		vehicleComps.push_back(m_vehicle);
 
 		///never deactivate the vehicle
 		m_carChassis->setActivationState(DISABLE_DEACTIVATION);
@@ -510,6 +617,9 @@ void Hinge2Vehicle::initPhysics()
 			wheel.m_rollInfluence = roll_Influence;
 		}
 	}
+
+	btRaycastVehicle* vagon1 = createVagon(m_vehicle);
+	btRaycastVehicle* vagon2 = createVagon(vagon1);
 
 	//seems not needed
 	resetForklift();
@@ -551,18 +661,24 @@ void Hinge2Vehicle::renderScene()
 	updateCamera();
 
 	//thsi code is just to draw the fake wheels
-	for (int i = 0; i < m_vehicle->getNumWheels(); i++)
-	{
-		//synchronize the wheels with the (interpolated) chassis worldtransform
-		m_vehicle->updateWheelTransform(i, true);
 
-		CommonRenderInterface* renderer = m_guiHelper->getRenderInterface();
-		if (renderer)
+	int aux = 0;
+
+	for (int i = 0; i < vehicleComps.size(); i++)
+	{
+		for (int j = 0; j < vehicleComps[i]->getNumWheels(); j++)
 		{
-			btTransform tr = m_vehicle->getWheelInfo(i).m_worldTransform;
-			btVector3 pos = tr.getOrigin();
-			btQuaternion orn = tr.getRotation();
-			renderer->writeSingleInstanceTransformToCPU(pos, orn, m_wheelInstances[i]);
+			vehicleComps[i]->updateWheelTransform(j, true);
+
+			CommonRenderInterface* renderer = m_guiHelper->getRenderInterface();
+			if (renderer)
+			{
+				btTransform tr = vehicleComps[i]->getWheelInfo(j).m_worldTransform;
+				btVector3 pos = tr.getOrigin();
+				btQuaternion orn = tr.getRotation();
+				renderer->writeSingleInstanceTransformToCPU(pos, orn, m_wheelInstances[aux]);
+				++aux;
+			}
 		}
 	}
 

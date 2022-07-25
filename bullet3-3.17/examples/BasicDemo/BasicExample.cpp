@@ -16,9 +16,9 @@ subject to the following restrictions:
 #include "BasicExample.h"
 
 #include "btBulletDynamicsCommon.h"
-#define ARRAY_SIZE_Y 5
-#define ARRAY_SIZE_X 5
-#define ARRAY_SIZE_Z 5
+#define ARRAY_SIZE_X 3
+#define ARRAY_SIZE_Y 12
+#define ARRAY_SIZE_Z 3
 
 #include "LinearMath/btVector3.h"
 #include "LinearMath/btAlignedObjectArray.h"
@@ -102,7 +102,7 @@ void BasicExample::initPhysics()
 				{
 					startTransform.setOrigin(btVector3(
 						btScalar(0.2 * i),
-						btScalar(2 + .2 * k),
+						btScalar(0.2 * k),
 						btScalar(0.2 * j)));
 
 					createRigidBody(mass, startTransform, colShape);
